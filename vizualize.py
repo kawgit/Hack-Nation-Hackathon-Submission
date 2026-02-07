@@ -1,87 +1,75 @@
-import torch
-import numpy as np
 import matplotlib.pyplot as plt
+import torch
 import os
-from torch.utils.data import DataLoader
+from tqdm import tqdm
+
 from dataset import load_dataset
 
-# Create output directory
-os.makedirs("histograms", exist_ok=True)
-
-ds = load_dataset()
-dl = DataLoader(ds, batch_size=1) # Note: Increasing batch_size will be faster
-
-# Storage for collecting all values
-# We use lists to collect batches, then concatenate at the end
-eeg_all = []
-moments_0_all = [] # Log Intensity
-moments_1_all = [] # Mean Time of Flight
-moments_2_all = [] # Variance
-
-print("Collecting data from dataset...")
-
-for i, batch in enumerate(dl):
-    # --- Collect EEG ---
-    # Flatten to 1D array
-    eeg_batch = batch["feature_eeg"].flatten().cpu().numpy()
-    eeg_all.append(eeg_batch)
-
-    # --- Collect Moments (Split by type) ---
-    # Shape is (Batch, Time, Mods, SDS, Wave, 3)
-    # We slice the last dimension [..., i]
-    # Index 0: Intensity
-    m0 = batch["feature_m0"].flatten().cpu().numpy()
-    moments_0_all.append(m0)
+def save_individual_histograms(dataset, base_dir="./histograms", num_samples=100):
+    """
+    Saves a separate histogram for every single channel to verify scaling.
+    """
+    eeg_dir = os.path.join(base_dir, "eeg_channels")
+    moments_dir = os.path.join(base_dir, "moment_features")
+    os.makedirs(eeg_dir, exist_ok=True)
+    os.makedirs(moments_dir, exist_ok=True)
     
-    # Index 1: Mean ToF
-    m1 = batch["feature_m1"].flatten().cpu().numpy()
-    moments_1_all.append(m1)
-    
-    # Index 2: Variance
-    m2 = batch["feature_m2"].flatten().cpu().numpy()
-    moments_2_all.append(m2)
-    
-    if i % 10 == 0:
-        print(f"Processed batch {i}...", end="\r")
+    all_eeg = []
+    all_moments = []
 
-print(f"\nData collection complete. Processing histograms...")
+    print(f"⌛ Collecting data from {num_samples} samples...")
+    count = 0
+    for batch in dataset:
+        all_eeg.append(batch["eeg_features"])
+        all_moments.append(batch["moment_features"])
+        count += 1
+        if count >= num_samples:
+            break
 
-# Concatenate all batches into single large arrays
-eeg_final = np.concatenate(eeg_all)
-m0_final = np.concatenate(moments_0_all)
-m1_final = np.concatenate(moments_1_all)
-m2_final = np.concatenate(moments_2_all)
+    # Shape: [Total_Time_Steps, 6]
+    eeg_data = torch.cat(all_eeg, dim=0) 
+    # Shape: [Total_Samples, 216]
+    moment_data = torch.cat(all_moments, dim=0).view(-1, 216)
 
-# Helper function to save plots
-def plot_hist(data, filename, title, color='blue', zoom=False):
-    plt.figure(figsize=(10, 6))
-    
-    # If zoom is requested, clip to 1st and 99th percentile to hide outliers
-    if zoom:
-        low, high = np.percentile(data, [1, 99])
-        data = data[(data >= low) & (data <= high)]
-        title += f" (Clipped: {low:.1f} to {high:.1f})"
-    
-    plt.hist(data, bins=100, color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
-    plt.title(title)
-    plt.xlabel("Feature Value")
-    plt.ylabel("Count")
-    plt.grid(True, alpha=0.3)
-    
-    save_path = os.path.join("histograms", filename)
-    plt.savefig(save_path)
-    plt.close()
-    print(f"Saved {save_path}")
+    # --- 1. Save EEG Plots ---
+    print(f"📊 Generating 6 EEG histograms...")
+    for i in range(6):
+        plt.figure(figsize=(6, 4))
+        channel_data = eeg_data[:, i].numpy().flatten()
+        
+        plt.hist(channel_data, bins=200, color='skyblue', edgecolor='black', alpha=0.7)
+        plt.title(f"EEG Channel {i} Normalization")
+        plt.xlabel("Scaled Value")
+        plt.ylabel("Frequency")
+        plt.xlim(-0.1, 1.1)
+        plt.grid(axis='y', alpha=0.3)
+        
+        plt.savefig(os.path.join(eeg_dir, f"eeg_ch_{i}.png"))
+        plt.close()
 
-# --- 1. EEG Histograms ---
-# Plot raw (to see artifacts)
-plot_hist(eeg_final, "eeg_raw.png", "EEG Data (Full Range incl. Artifacts)", color='red')
-# Plot zoomed (to see actual brain signal distribution)
-plot_hist(eeg_final, "eeg_zoomed.png", "EEG Data (Zoomed / Signal Only)", color='green', zoom=True)
+    # --- 2. Save Moment Plots ---
+    print(f"📊 Generating 216 Moment histograms...")
+    for i in tqdm(range(216)):
+        feat_data = moment_data[:, i].numpy().flatten()
+        
+        # Optional: Skip plotting if the channel is entirely empty/constant
+        if feat_data.max() == feat_data.min():
+            continue
 
-# --- 2. Moments Histograms ---
-plot_hist(m0_final, "moments_0_intensity.png", "Moments: Log Intensity (Idx 0)", color='purple')
-plot_hist(m1_final, "moments_1_mean_tof.png", "Moments: Mean ToF (Idx 1)", color='orange')
-plot_hist(m2_final, "moments_2_variance.png", "Moments: Variance (Idx 2)", color='cyan')
+        plt.figure(figsize=(6, 4))
+        plt.hist(feat_data, bins=50, color='salmon', edgecolor='black', alpha=0.7)
+        plt.title(f"Moment Feature {i} Normalization")
+        plt.xlabel("Scaled Value")
+        plt.ylabel("Frequency")
+        plt.xlim(-0.1, 1.1)
+        plt.grid(axis='y', alpha=0.3)
+        
+        plt.savefig(os.path.join(moments_dir, f"moment_feat_{i:03d}.png"))
+        plt.close()
 
-print("Done.")
+    print(f"✅ Done! Plots saved to:\n - {eeg_dir}\n - {moments_dir}")
+
+if __name__ == "__main__":
+    # Ensure your load_dataset function is defined above this in your script
+    ds = load_dataset()
+    save_individual_histograms(ds, num_samples=50)
