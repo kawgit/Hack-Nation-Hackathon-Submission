@@ -15,11 +15,11 @@ from checkpoint import save_checkpoint, load_checkpoint
 torch.set_float32_matmul_precision('high')
 
 CONFIG = {
-    "lr": 0,
+    "lr": 3e-4,
     "batch_size": 64,
     "num_epochs": 100,
     "num_layers": 4,
-    "dim": 1024,
+    "dim": 32,
     "save_every": 500,
     "val_split": 0.1,
     "checkpoint_path": "checkpoint.pt",
