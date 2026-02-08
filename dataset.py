@@ -82,8 +82,8 @@ class BrainWaveIntentDataset(IterableDataset):
         print(f"✅ Created {SCALING_CONFIG_PATH}")
 
     def _preprocess(self, eeg_features, moment_features, label):
-        eeg_features = torch.nan_to_num(torch.tensor(eeg_features), nan=0.0)
-        moment_features = torch.nan_to_num(torch.tensor(moment_features).reshape(72, -1), nan=0.0)
+        eeg_features = torch.nan_to_num(torch.tensor(eeg_features, dtype=torch.float32), nan=0.0)
+        moment_features = torch.nan_to_num(torch.tensor(moment_features, dtype=torch.float32).reshape(72, -1), nan=0.0)
 
         def normalize(features, ranges):
             for i, (low, high) in enumerate(ranges):
@@ -99,6 +99,15 @@ class BrainWaveIntentDataset(IterableDataset):
         moment_flat = moment_features.view(-1)
         moment_flat = normalize(moment_flat, self.moment_ranges)
         moment_features = moment_flat.view(72, -1)
+
+        label_names = [ 
+            "Right Fist",
+            "Left Fist",
+            "Both Fists",
+            "Tongue Tapping",
+            "Relax",
+        ]
+        label = torch.tensor(label_names.index(label["label"]))
 
         return {
             "eeg_features": eeg_features,

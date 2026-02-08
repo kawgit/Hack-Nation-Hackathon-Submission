@@ -209,3 +209,5 @@ __marimo__/
 # Custom stuff
 data/
 histograms/
+wandb/
+.vscode/
